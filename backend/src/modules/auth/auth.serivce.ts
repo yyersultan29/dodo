@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 
 import { IUser, User } from '../user/user.model';
 import { Auth } from './auth.model';
-import { UnauthorizedError } from '../../errors';
+import { BadRequestError, UnauthorizedError } from '../../errors';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_key';
 const JWT_EXPIRES_IN = '15m'; // 15 минут
@@ -25,16 +25,16 @@ export const generateRefreshToken = (user: IUser) => {
 export const login = async (email: string, password: string) => {
   try {
     if (!email || !password) {
-      throw new Error('Email и пароль обязательны');
+      throw new BadRequestError('Email and password required');
     }
     const findUser = await User.findOne({ email });
     if (!findUser) {
       throw new UnauthorizedError('User not registered');
     }
 
-    const isMatch = await bcrypt.compare(findUser.password, password);
+    const isMatch = await bcrypt.compare(password, findUser.password);
     if (!isMatch) {
-      throw new UnauthorizedError('Email or password incorrect!');
+      throw new BadRequestError('Email or password incorrect');
     }
     const accessToken = generateAccessToken(findUser);
     const refreshToken = generateRefreshToken(findUser);
@@ -45,7 +45,42 @@ export const login = async (email: string, password: string) => {
       { refreshToken },
       { upsert: true }
     );
+
+    return { accessToken, refreshToken, user: findUser };
   } catch (e) {
-    console.error('auth.service [login] error');
+    console.error('auth.service [login] error', e);
+    throw e;
   }
+};
+
+export const register = async (
+  email: string,
+  password: string,
+  username: string
+) => {
+  try {
+    if (!email || !password) {
+      throw new BadRequestError('Email and password required');
+    }
+    const findUser = await User.findOne({ email });
+    if (findUser) {
+      throw new BadRequestError('User already exists');
+    }
+    const newUser = new User({ email, password, username });
+    await newUser.save();
+
+    return { newUser, message: 'User created successfully' };
+  } catch (err) {
+    console.log(err);
+
+    throw err;
+  }
+};
+
+export const refreshToken = async (token: string) => {
+  try {
+    if (!token) {
+      throw new BadRequestError('Token required');
+    }
+  } catch (e) {}
 };
