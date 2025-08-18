@@ -1,9 +1,13 @@
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import jwt, { JwtPayload } from 'jsonwebtoken';
 
 import { IUser, User } from '../user/user.model';
 import { Auth } from './auth.model';
-import { BadRequestError, UnauthorizedError } from '../../errors';
+import {
+  BadRequestError,
+  NotFoundError,
+  UnauthorizedError,
+} from '../../errors';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_key';
 const JWT_EXPIRES_IN = '15m'; // 15 минут
@@ -20,6 +24,22 @@ export const generateRefreshToken = (user: IUser) => {
   return jwt.sign({ id: user._id }, REFRESH_SECRET, {
     expiresIn: REFRESH_EXPIRES_IN,
   });
+};
+
+export const verifyAccessToken = (token: string): JwtPayload | null => {
+  try {
+    return jwt.verify(token, JWT_SECRET) as JwtPayload;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const verifyRefreshToken = (token: string): JwtPayload | null => {
+  try {
+    return jwt.verify(token, REFRESH_SECRET) as JwtPayload;
+  } catch (e) {
+    return null;
+  }
 };
 
 export const login = async (email: string, password: string) => {
@@ -82,5 +102,33 @@ export const refreshToken = async (token: string) => {
     if (!token) {
       throw new BadRequestError('Token required');
     }
-  } catch (e) {}
+    // check is exists
+    const findToken = await Auth.findOne({ refreshToken: token });
+    if (!findToken) {
+      throw new BadRequestError('Invalid token');
+    }
+
+    const decoded = verifyRefreshToken(token);
+    if (!decoded) {
+      throw new UnauthorizedError();
+    }
+
+    const findUser = await User.findOne({ _id: findToken.userId });
+    if (!findUser) {
+      throw new NotFoundError('User not found');
+    }
+
+    const accessToken = generateAccessToken(findUser);
+    const refreshToken = generateRefreshToken(findUser);
+
+    await Auth.findOneAndUpdate(
+      { userId: findUser._id },
+      { refreshToken },
+      { upsert: true }
+    );
+
+    return { accessToken, refreshToken, message: 'Updated successfully' };
+  } catch (e) {
+    throw e;
+  }
 };

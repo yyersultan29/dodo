@@ -32,15 +32,16 @@ export const register = async (
   }
 };
 
-export const refreshToken = async (req: Request, res: Response) => {
+export const refreshToken = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     const { token } = req.body; // refreshToken
     const result = await authService.refreshToken(token);
     return res.json(result);
   } catch (e) {
-    res.status(500).json({
-      status: 500,
-      message: 'Something went wrong',
-    });
+    next(e);
   }
 };
